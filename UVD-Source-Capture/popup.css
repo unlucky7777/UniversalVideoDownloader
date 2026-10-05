@@ -1,0 +1,24 @@
+:root{font:13px/1.45 "Segoe UI","Malgun Gothic",system-ui,sans-serif;color:#e4eefc;background:#0d1422}
+*{box-sizing:border-box}
+body{width:440px;max-height:620px;margin:0;overflow-y:auto}
+header{display:flex;align-items:center;justify-content:space-between;padding:12px 15px;border-bottom:1px solid #253449;background:#111e32}
+.brand{display:flex;gap:10px;align-items:center}.mark{width:31px;height:31px;display:grid;place-items:center;background:#398cf6;color:#fff;font-weight:900;border-radius:8px;font-size:16px}
+h1{font-size:15px;margin:0;font-weight:700;letter-spacing:.1px}
+.mode{font-size:11px;background:#283750;padding:5px 8px;border-radius:12px;white-space:nowrap}.mode.on{background:#113d34;color:#69e0b2}
+main{padding:12px 15px 15px}
+.controls{display:grid;grid-template-columns:1fr auto;gap:6px;margin-bottom:10px}
+button{font:inherit;cursor:pointer;border:1px solid #465773;border-radius:7px;padding:8px 11px;transition:background .12s,border-color .12s}
+button:focus-visible,summary:focus-visible,select:focus-visible{outline:2px solid #72b1ff;outline-offset:2px}
+button:disabled{opacity:.4;cursor:default}
+button.primary{background:#2074d7;border-color:#418ce3;color:#fff;font-weight:650}button.primary:not(:disabled):hover{background:#3589ed}
+button.secondary{background:#202f46;color:#d5e5f8}button.secondary:not(:disabled):hover{background:#304662}
+.route-note{margin:0 0 10px;padding:7px 9px;border-left:3px solid #398cf6;background:#16243a;color:#a8c1df;font-size:11px;border-radius:0 5px 5px 0}
+.listhead{display:flex;justify-content:space-between;align-items:center;margin:0 0 6px}.listhead span{color:#8eaccb;font-size:12px}
+.items{height:145px;overflow:auto;background:#121d30;border:1px solid #2d425c;border-radius:7px;padding:5px}
+.item{display:block;width:100%;text-align:left;background:transparent;border:1px solid transparent;color:#d5e3f7;padding:7px 9px;border-radius:5px;margin:0 0 3px;white-space:normal}
+.item:hover{background:#1c314f}.item.selected{background:#1e3f66;border-color:#478ee5}.item .meta{font-size:11px;color:#79c6f2;display:block;margin-bottom:3px;font-weight:700}.item .path{font-size:12px;overflow-wrap:anywhere;display:block}.empty{padding:25px 12px;text-align:center;color:#7897ba;margin:0}
+.quality-picker{margin-top:9px;background:#14273e;border:1px solid #416082;border-radius:8px;padding:9px}.quality-picker label{display:block;font-weight:700;margin-bottom:5px;color:#b8dcff}.quality-picker select{width:100%;font:inherit;padding:7px 9px;background:#0f1c2d;border:1px solid #55769c;border-radius:6px;color:#eef6ff}.quality-picker select:disabled{opacity:.55}.quality-picker p{font-size:11px;color:#91b8db;margin:5px 0 0}
+.media-details{margin-top:9px;background:#182840;border:1px solid #344d6d;border-radius:8px;padding:9px}.detail{display:flex;justify-content:space-between;gap:10px;margin:2px 0 6px}.detail span{color:#9eb8d6}.detail strong{font-size:12px;text-align:right;color:#e3efff}.detail-note{margin:6px 0 2px;color:#9fc5e9;font-size:11px}.linkbutton{border:0;background:transparent;color:#9dc8f6;padding:3px 0;font-size:11px;text-decoration:underline}
+.download-actions{display:grid;gap:6px;margin-top:10px}.download-actions button{width:100%;padding:9px 12px}
+.status{margin-top:8px;min-height:18px;color:#97d8f5;overflow-wrap:anywhere;font-size:11px}.status.error{color:#ffab9e}
+details{margin-top:8px;border-top:1px solid #253449;padding-top:7px;color:#9eb6d1;font-size:12px}summary{cursor:pointer;color:#b9cde5;user-select:none}.tool-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}.tool-grid button{padding:7px 8px;font-size:12px}.danger-lite{color:#ffb0a8!important}.help p{margin:7px 0 0;font-size:11px;line-height:1.5;color:#91a8c2}

@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify public source tree
+        shell: pwsh
+        run: ./scripts/verify-public-tree.ps1 -Strict
+
+      - name: Restore .NET
+        run: dotnet restore N_m3u8DL_RE_GUI.sln
+
+      - name: Test .NET
+        run: dotnet test N_m3u8DL_RE_GUI.Tests/N_m3u8DL_RE_GUI.Tests.csproj -c Release --no-restore
+
+      - name: Test Chrome extension
+        working-directory: UVD-Source-Capture
+        run: npm test

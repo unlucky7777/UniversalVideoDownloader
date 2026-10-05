@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UVD Source Capture</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <div class="brand"><span class="mark">U</span><h1>UVD Source Capture</h1></div>
+    <span id="mode" class="mode">대기 중</span>
+  </header>
+  <main>
+    <div class="controls" aria-label="영상 감지">
+      <button id="start" class="primary">감지 시작</button>
+      <button id="stop" class="secondary" disabled hidden>감지 중지</button>
+      <button id="scan" class="secondary">다시 탐색</button>
+    </div>
+
+    <div class="route-note" id="site-route-note" hidden></div>
+
+    <div class="listhead"><strong>영상</strong><span id="count">0건</span></div>
+    <div id="items" class="items" role="listbox" aria-label="발견된 영상 소스"></div>
+
+    <section class="quality-picker" aria-label="다운로드 화질 선택">
+      <label for="quality-select">화질</label>
+      <select id="quality-select" disabled aria-describedby="quality-hint">
+        <option value="">영상 분석 중</option>
+      </select>
+      <p id="quality-hint">화질 정보를 확인 중입니다.</p>
+    </section>
+
+    <section class="media-details" aria-label="선택한 영상 정보">
+      <div class="detail"><span>화질</span><strong id="detail-quality">확인 중</strong></div>
+      <div class="detail"><span>길이</span><strong id="detail-duration">확인 중</strong></div>
+      <div class="detail"><span>용량</span><strong id="detail-size">확인 중</strong></div>
+      <div class="detail"><span>형식</span><strong id="detail-format">—</strong></div>
+      <div class="detail"><span>FPS / 코덱</span><strong id="detail-codec">—</strong></div>
+      <p id="detail-note" class="detail-note">영상 정보를 확인 중입니다.</p>
+      <button id="probe" class="linkbutton" disabled>정보 다시 확인</button>
+    </section>
+
+    <div class="download-actions" aria-label="다운로드">
+      <button id="download-page" class="primary" disabled>페이지 영상 UVD로 가져오기</button>
+      <button id="download" class="primary" disabled hidden>선택한 영상 UVD로 가져오기</button>
+    </div>
+
+    <div id="status" class="status" role="status" aria-live="polite">영상과 화질을 확인한 뒤 UVD 검토 화면으로 가져오세요.</div>
+
+    <details class="tools">
+      <summary>추가 도구</summary>
+      <div class="tool-grid">
+        <button id="native-test" class="secondary">UVD 연결 확인</button>
+        <button id="video-rightclick" class="secondary" aria-pressed="false">영상 우클릭 허용</button>
+        <button id="copy-curl" class="secondary" disabled>URL + 헤더 복사</button>
+        <button id="copy-url" class="secondary" disabled>URL 복사</button>
+        <button id="copy-diagnostics" class="secondary">진단 정보 복사</button>
+        <button id="clear" class="secondary danger-lite">감지 기록 지우기</button>
+      </div>
+    </details>
+
+    <details class="help">
+      <summary>다운로드가 안 될 때</summary>
+      <p>로그인 세션·만료 URL·DRM 때문에 직접 다운로드가 제한될 수 있습니다. 권한이 있는 영상에만 사용하고, 실패 시 영상 재생 후 다시 탐색하거나 UVD 연결 상태를 확인하세요.</p>
+    </details>
+  </main>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

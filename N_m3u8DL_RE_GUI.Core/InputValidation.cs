@@ -1,0 +1,84 @@
+#nullable enable
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text.RegularExpressions;
+using N_m3u8DL_RE_GUI.Core.Capture;
+
+namespace N_m3u8DL_RE_GUI.Core;
+
+/// <summary>
+/// Shared input/validation helpers used by GUI and services.
+/// </summary>
+public static class InputValidation
+{
+    private static readonly HashSet<string> StartupInputExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".m3u8",
+        ".json",
+        ".txt",
+        ".mpd"
+    };
+
+    private static readonly Regex UrlRegex = new(
+        @"(https?)://[-A-Za-z0-9+&@#/%?=~_|!:,.;]+[-A-Za-z0-9+&@#/%=~_|]",
+        RegexOptions.Compiled | RegexOptions.Singleline);
+
+    public static bool IsHttpUrl(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return false;
+
+        return Uri.TryCreate(input, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            && !string.IsNullOrWhiteSpace(uri.Host);
+    }
+
+    public static bool IsValidProxy(string? proxy)
+    {
+        if (string.IsNullOrWhiteSpace(proxy))
+            return true;
+
+        return proxy.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+               proxy.StartsWith("socks5://", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool IsLikelyValidInput(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return false;
+
+        if (IsHttpUrl(input))
+            return true;
+
+        return File.Exists(input) || Directory.Exists(input);
+    }
+
+    public static bool IsSupportedStartupInputArgument(string? argument)
+    {
+        if (string.IsNullOrWhiteSpace(argument))
+            return false;
+
+        if (IsHttpUrl(argument))
+            return true;
+
+        if (Directory.Exists(argument))
+            return true;
+
+        var extension = Path.GetExtension(argument);
+        return StartupInputExtensions.Contains(extension);
+    }
+
+    public static string ExtractFirstUrl(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return string.Empty;
+
+        // A Referer header may precede the actual media URL in browser Copy as cURL.
+        // Never use first-HTTPS extraction on cURL: parse the true request target.
+        if (CurlCommandParser.LooksLikeCurl(text))
+            return CurlCommandParser.Parse(text)?.Url ?? string.Empty;
+
+        return UrlRegex.Match(text).Value;
+    }
+}

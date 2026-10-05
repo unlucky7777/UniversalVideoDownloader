@@ -1,0 +1,26 @@
+Universal Video Downloader — support model
+
+UVD does not maintain a hard-coded promise that every page on a named website will work.
+
+1. Verified generic media paths
+   - HLS / M3U8
+   - MPEG-DASH / MPD
+   - Microsoft Smooth Streaming / ISM
+   - Direct MP4 / WebM media where the server permits direct access
+
+2. Generic web pages
+   - UVD can use the bundled yt-dlp executable for page metadata and extraction.
+   - The exact extractor set depends on the pinned yt-dlp version.
+   - Run "yt-dlp --list-extractors" against the bundled executable to inspect that version's current extractor list.
+   - Extractor presence does not guarantee that every URL, login state, region, or CDN response will work.
+
+3. Browser-assisted discovery
+   - The Chrome companion can observe media for a tab after the user starts detection.
+   - Browser/API discovery is used when the player exposes safe media metadata without changing playback state.
+
+4. Site adapters
+   - A small adapter registry is used only when generic handling is insufficient.
+   - Adapters share the same review, metadata, quality and transport contracts.
+   - Adapter behavior can require updates when a website changes.
+
+Support is intentionally capability-based rather than a long static website list.

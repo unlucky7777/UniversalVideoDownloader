@@ -1,0 +1,71 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+
+    <AssemblyName>UniversalVideoDownloader</AssemblyName>
+    <RootNamespace>N_m3u8DL_RE_GUI</RootNamespace>
+    <ApplicationIcon>logo_3Iv_icon.ico</ApplicationIcon>
+
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="App.config" Condition="Exists('App.config')" />
+    <None Update="Services\eporner-downloader.cjs" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="eporner-downloader.cjs" />
+    <None Update="Services\curl-hls.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="curl-hls.ps1" />
+    <None Update="Services\curl-mp4.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="curl-mp4.ps1" />
+    <None Update="range-mp4.cjs" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="range-mp4.cjs" />
+    <EmbeddedResource Include="Services\browser-autoplay.js" LogicalName="UniversalVideoDownloader.BrowserAutoplay" />
+    <EmbeddedResource Include="Services\browser-quality.js" LogicalName="UniversalVideoDownloader.BrowserQuality" />
+    <EmbeddedResource Include="Services\browser-naver.js" LogicalName="UniversalVideoDownloader.BrowserNaver" />
+    <None Include="..\SUPPORTED-SITES.txt" Condition="Exists('..\SUPPORTED-SITES.txt')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      <Link>SUPPORTED-SITES.txt</Link>
+    </None>
+    <Resource Include="logo_3Iv_icon.ico" />
+    <None Include="..\yt-dlp.exe" Condition="Exists('..\yt-dlp.exe')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      <Link>yt-dlp.exe</Link>
+    </None>
+    <None Include="..\N_m3u8DL-RE.exe" Condition="Exists('..\N_m3u8DL-RE.exe')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      <Link>N_m3u8DL-RE.exe</Link>
+    </None>
+    <None Include="..\ffmpeg.exe" Condition="Exists('..\ffmpeg.exe')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      <Link>ffmpeg.exe</Link>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\N_m3u8DL_RE_GUI.Core\N_m3u8DL_RE_GUI.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.8" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3485.44" />
+  </ItemGroup>
+
+  <!-- The extension ships inside the GUI's zip and needs to know which suite
+       release it came with. Generating it from $(AppVersion) keeps
+       Directory.Build.props the only place anyone types a version. -->
+  <Target Name="WriteSuiteVersionForExtension" AfterTargets="Build">
+    <PropertyGroup>
+      <SuiteVersionFile>$(MSBuildThisFileDirectory)..\UVD-Source-Capture\suite-version.json</SuiteVersionFile>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(SuiteVersionFile)" Lines="{ &quot;suiteVersion&quot;: &quot;$(AppVersion)&quot; }" Overwrite="true" WriteOnlyWhenDifferent="true" />
+  </Target>
+</Project>

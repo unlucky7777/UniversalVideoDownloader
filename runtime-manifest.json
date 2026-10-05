@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "generatedFor": "UVD 1.0.0",
+  "components": [
+    {
+      "name": "N_m3u8DL-RE.exe",
+      "version": "0.6.0+df70f0b3da0c630bd413bf617e758051f6b64757",
+      "sha256": "35E7C16983F0315BBA2A3F37DC392FDFA074BE614C8EFFB642B78376B18BA272",
+      "license": "MIT",
+      "source": "https://github.com/nilaoda/N_m3u8DL-RE",
+      "release": "https://github.com/nilaoda/N_m3u8DL-RE/releases/tag/v0.6.0-beta"
+    },
+    {
+      "name": "yt-dlp.exe",
+      "version": "2026.08.19",
+      "sha256": "66674953FE251B89F4D08C5F0E35E0728679BD67AB3D7D05C0562AF101DD3E7A",
+      "license": "GPL-3.0-or-later for the PyInstaller Windows executable; upstream project source is Unlicense",
+      "source": "https://github.com/yt-dlp/yt-dlp",
+      "release": "https://github.com/yt-dlp/yt-dlp/releases/tag/2026.08.19"
+    },
+    {
+      "name": "ffmpeg.exe",
+      "version": "2026-07-30-git-2ae2413488-essentials_build-www.gyan.dev",
+      "sha256": "29ACBD79E87E2EA92DF6C0FEA00BF22A21B6BD987BD2C9D9DE20C66D7DD20EBB",
+      "license": "GPL-3.0",
+      "source": "https://github.com/FFmpeg/FFmpeg/commit/2ae2413488",
+      "buildProvider": "https://www.gyan.dev/ffmpeg/builds/"
+    }
+  ]
+}
