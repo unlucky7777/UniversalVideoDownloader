@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using N_m3u8DL_RE_GUI.Core.Capture;
 
 internal static class StreamMetadata
 {
@@ -69,10 +70,29 @@ internal static class StreamMetadata
                 if(h.Success)selectedHeight=int.Parse(h.Groups[1].Value,CultureInfo.InvariantCulture);
             }
 
-            long? estimate=null;
-            if(duration is >0 && selectedBandwidth is >0)
+            FfmpegMediaMetadata ffmpeg;
+            try
             {
-                var value=selectedBandwidth.Value*duration.Value/8d;
+                ffmpeg=FfmpegMediaProbe.ProbeAsync(
+                    Path.Combine(AppContext.BaseDirectory,"ffmpeg.exe"),url,
+                    headers.Select(h=>new KeyValuePair<string,string>(h.Name,h.Value)),
+                    CancellationToken.None,TimeSpan.FromSeconds(14)).GetAwaiter().GetResult();
+            }
+            catch
+            {
+                ffmpeg=new FfmpegMediaMetadata(false,null,null,null,null,null,
+                    string.Empty,string.Empty,string.Empty,"FFmpeg HLS probe unavailable.");
+            }
+            duration ??= ffmpeg.Duration;
+            selectedHeight ??= ffmpeg.Height;
+            selectedWidth ??= ffmpeg.Width;
+            selectedFps ??= ffmpeg.Fps;
+
+            long? estimate=null;
+            var effectiveBandwidth=selectedBandwidth??ffmpeg.Bitrate;
+            if(duration is >0 && effectiveBandwidth is >0)
+            {
+                var value=effectiveBandwidth.Value*duration.Value/8d;
                 if(value>0 && value<long.MaxValue)estimate=(long)Math.Round(value);
             }
 
@@ -87,10 +107,14 @@ internal static class StreamMetadata
                 }).ToArray();
 
             return new {
-                ok=true,kind="HLS",verifiedBy="windows-curl",
+                ok=true,kind="HLS",verifiedBy="windows-curl+ffmpeg",
                 height=selectedHeight,width=selectedWidth,fps=selectedFps,
                 duration,estimatedBytes=estimate,formats,
-                note="HLS playlist verified through Windows curl."
+                format=string.IsNullOrWhiteSpace(ffmpeg.Format)?"HLS / M3U8":ffmpeg.Format,
+                videoCodec=ffmpeg.VideoCodec,
+                audioCodec=ffmpeg.AudioCodec,
+                bitrate=effectiveBandwidth,
+                note="HLS playlist verified through Windows curl; FFmpeg supplements container/codec metadata."
             };
         }
         catch

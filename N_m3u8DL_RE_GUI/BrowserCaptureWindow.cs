@@ -510,6 +510,13 @@ public sealed partial class BrowserCaptureWindow : Window
                     (variant.Bytes is > 0 ? " · " + (variant.Bytes.Value / 1048576d).ToString("N1") + " MiB" : ""),
                     variant.Url));
             _qualities.SelectedIndex = 0;
+            try
+            {
+                _lastMetadata = await CaptureMediaProbe.InspectAsync(selected, cts.Token);
+            }
+            catch (OperationCanceledException) when (!cts.IsCancellationRequested)
+            {
+            }
             UpdateNaverQualityMetadata();
             _status.Text = "Naver video #" + naver.Number + ": choose its quality, then confirm. No automatic download.";
             return;
@@ -523,12 +530,21 @@ public sealed partial class BrowserCaptureWindow : Window
                 _qualities.Items.Add(new QualityChoice(h,h+"p (observed / playlist)"));
             var bytes=result.Bytes.HasValue
                 ?(result.Approximate?"≈ ":"")+ (result.Bytes.Value/1048576d).ToString("N1")+" MiB"
-                :"Unavailable";
+                :"서버 미제공";
             var duration=result.Duration.HasValue
-                ?TimeSpan.FromSeconds(result.Duration.Value).ToString(@"hh\:mm\:ss"):"Unavailable";
-            _metadata.Text="Quality: "+(result.Height.HasValue?result.Height+"p":"not advertised")+
-                "  ·  Total size: "+bytes+"  ·  Duration: "+duration+
-                "  ·  Current speed: measured after Start.\n"+result.Note;
+                ?TimeSpan.FromSeconds(result.Duration.Value).ToString(@"hh\:mm\:ss"):"컨테이너 미제공";
+            var quality=result.Height.HasValue?result.Height+"p":"원본 해상도 · 미표기";
+            var resolution=result.Width is >0 && result.Height is >0
+                ?result.Width+"×"+result.Height:quality;
+            var format=string.IsNullOrWhiteSpace(result.Format)?"Media stream":result.Format;
+            var codec=string.IsNullOrWhiteSpace(result.Codec)?"코덱 미표기":result.Codec;
+            var fps=result.Fps is >0?result.Fps.Value.ToString("0.##")+" FPS":"FPS 미표기";
+            _metadata.Text="Quality: "+quality+
+                "  ·  Resolution: "+resolution+
+                "  ·  Duration: "+duration+
+                "  ·  Total size: "+bytes+
+                "\nFormat: "+format+"  ·  Codec: "+codec+"  ·  FPS: "+fps+
+                "\n"+result.Note;
             _status.Text="Review the detected source and click Use selected media. Download never starts automatically.";
         }
         catch(OperationCanceledException)

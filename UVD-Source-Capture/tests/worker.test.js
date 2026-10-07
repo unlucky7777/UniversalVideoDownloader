@@ -324,6 +324,27 @@ test('Naver worker stores both video modules as two separate selectable quality 
     const main=selectMainMedia(rows,{kind:'website',url});
     assert.deepEqual(main.map(s=>s.videoOrdinal),[1,2]);
     assert.deepEqual(main.map(s=>s.declaredHeight),[1080,1080]);
+
+    // An exact Naver MP4 handoff must keep the MP4 URL primary. 1080p is
+    // review metadata (selectedHeight), not a maxQuality selector for FILE.
+    const handoffs=[];
+    x.fixture.runtime.sendNativeMessage=async(_host,msg)=>{
+      handoffs.push(msg);
+      if(msg.type==='DOWNLOAD')return {ok:true,queued:true,launched:true};
+      return {ok:true,version:11};
+    };
+    const first1080=rows.find(row=>row.videoOrdinal===1&&row.declaredHeight===1080);
+    const sent=await x.send('NATIVE_DOWNLOAD',4,{
+      url:first1080.url,maxQuality:'best',selectedHeight:1080
+    });
+    assert.equal(sent.queued,true);
+    const direct=handoffs.find(msg=>msg.type==='DOWNLOAD');
+    assert.equal(direct.url,first1080.url);
+    assert.equal(direct.kind,'FILE');
+    assert.equal(direct.maxQuality,'best');
+    assert.equal(direct.selectedHeight,1080);
+    assert.equal(direct.pageUrl,url);
+
     assert.equal(queried.length,2);
     assert(!JSON.stringify([...x.db]).includes('KEYFIRST11111111'));
     assert(!JSON.stringify([...x.db]).includes('KEYSECOND2222222'));

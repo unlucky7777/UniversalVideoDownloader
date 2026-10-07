@@ -6,4 +6,7 @@
   <Nullable>enable</Nullable>
   <AssemblyName>UvdNativeHost</AssemblyName>
 </PropertyGroup>
+<ItemGroup>
+  <ProjectReference Include="..\N_m3u8DL_RE_GUI.Core\N_m3u8DL_RE_GUI.Core.csproj" />
+</ItemGroup>
 </Project>

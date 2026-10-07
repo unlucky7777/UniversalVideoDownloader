@@ -1,13 +1,13 @@
 // Local metadata inference. Unknown information is always null; do not
 // represent the player-reported quality as a verified network rendition.
 export function formatDuration(seconds) {
-  if (!Number.isFinite(seconds) || seconds <= 0) return '확인 불가';
+  if (!Number.isFinite(seconds) || seconds <= 0) return '미제공';
   const n=Math.round(seconds), h=Math.floor(n/3600),m=Math.floor(n%3600/60),s=n%60;
   return h ? [h,m,s].map((v,i)=>i?String(v).padStart(2,'0'):String(v)).join(':')
            : m+':'+String(s).padStart(2,'0');
 }
 export function formatBytes(bytes) {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '확인 불가';
+  if (!Number.isFinite(bytes) || bytes <= 0) return '미제공';
   const unit=bytes>=1073741824?['GB',1073741824]:bytes>=1048576?['MB',1048576]:['KB',1024];
   return (bytes/unit[1]).toFixed(bytes/unit[1]>=100?0:1)+' '+unit[0];
 }

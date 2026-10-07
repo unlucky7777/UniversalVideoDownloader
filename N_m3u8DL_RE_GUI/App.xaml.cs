@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
@@ -10,6 +11,10 @@ namespace N_m3u8DL_RE_GUI
     /// <summary>Application entry point and global failure handling.</summary>
     public partial class App : System.Windows.Application
     {
+        internal const string NativeInboxInstanceMarkerName = @"Local\UVD.NativeInboxV2.App";
+        private static readonly Mutex NativeInboxInstanceMarker =
+            new(initiallyOwned: false, NativeInboxInstanceMarkerName);
+
         protected override void OnStartup(StartupEventArgs e)
         {
             DispatcherUnhandledException += OnDispatcherUnhandledException;
@@ -54,6 +59,7 @@ namespace N_m3u8DL_RE_GUI
         protected override void OnExit(ExitEventArgs e)
         {
             ViewModelLocator.Cleanup();
+            NativeInboxInstanceMarker.Dispose();
             base.OnExit(e);
         }
     }

@@ -113,12 +113,32 @@ public sealed partial class BrowserCaptureWindow
             && option.Vid == selected.Vid ? option : selected;
         var size = info.Variant.Bytes is > 0
             ? (info.Variant.Bytes.Value / 1048576d).ToString("N1") + " MiB (Naver metadata)"
-            : "Unavailable";
+            : _lastMetadata?.Bytes is > 0
+                ? (_lastMetadata.Approximate ? "약 " : "") +
+                  (_lastMetadata.Bytes.Value / 1048576d).ToString("N1") + " MiB"
+                : "서버 미제공";
+        var duration = _lastMetadata?.Duration is > 0
+            ? TimeSpan.FromSeconds(_lastMetadata.Duration.Value).ToString(@"hh\:mm\:ss")
+            : "컨테이너 미제공";
+        var format = !string.IsNullOrWhiteSpace(_lastMetadata?.Format)
+            ? _lastMetadata.Format : "MP4";
+        var codec = !string.IsNullOrWhiteSpace(_lastMetadata?.Codec)
+            ? _lastMetadata.Codec : "코덱 미표기";
+        var fps = _lastMetadata?.Fps is > 0
+            ? _lastMetadata.Fps.Value.ToString("0.##") + " FPS"
+            : "FPS 미표기";
+        var resolution = _lastMetadata?.Width is > 0 && info.Variant.Height > 0
+            ? _lastMetadata.Width + "×" + info.Variant.Height
+            : info.Variant.Height > 0 ? info.Variant.Height + "p" : "원본 해상도";
         _metadata.Text = "Naver video #" + info.Number +
-            "  ·  Quality: " + (info.Variant.Height > 0 ? info.Variant.Height + "p" : "not advertised") +
+            "  ·  Quality: " + (info.Variant.Height > 0 ? info.Variant.Height + "p" : "site original") +
+            "  ·  Resolution: " + resolution +
+            "\nDuration: " + duration +
             "  ·  Total size: " + size +
-            "  ·  Current speed: measured after Start.\\n" +
-            "Choose the quality above; each option uses its own exact signed MP4 URL.";
+            "  ·  Format: " + format +
+            "  ·  Codec: " + codec +
+            "  ·  FPS: " + fps +
+            "\nChoose the quality above; each option uses its own exact signed MP4 URL.";
     }
 
     private async Task ScanOtherVideosAsync()

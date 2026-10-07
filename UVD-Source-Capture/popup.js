@@ -55,20 +55,20 @@ function showDetails(source, result) {
     const chosen=chosenQuality==='best'?variants[0]:
       variants.find(v=>Number(v.height)===Number(chosenQuality));
     $('detail-quality').textContent=chosen?chosen.height+'p'+(chosen.fps?' · '+chosen.fps+' FPS':'')
-      :info?'제공 해상도 확인 불가':'조회 전 / 확인 불가';
+      :info?'원본 해상도 · 사이트 미표기':'메타데이터 조회 전';
     $('detail-duration').textContent=formatDuration(info?.duration);
     $('detail-size').textContent=chosen?.sizeBytes
-      ?'약 '+formatBytes(chosen.sizeBytes)+' (트랙 크기 합계, 병합 전)'
+      ?formatBytes(chosen.sizeBytes)+' (트랙 크기 합계, 병합 전)'
       :chosen?.estimatedBytes? '약 '+formatBytes(chosen.estimatedBytes)+' (영상+음성 추정)'
-      :'확인 불가';
+      :'사이트 미제공';
     const specialMp4=pageDescriptor?.kind==='site-adapter';
     $('detail-format').textContent=chosen
       ?specialMp4?'MP4 직접 파일':chosen.ext+' 원본 / MP4 병합 시도'
-      :specialMp4?'사이트 전용 MP4 분석':'yt-dlp 페이지 분석';
+      :specialMp4?'사이트 전용 MP4':'웹 페이지 미디어';
     $('detail-codec').textContent=chosen
-      ?specialMp4?'MP4 직접 스트림':
-        (chosen.fps?chosen.fps+' FPS · ':'')+(chosen.videoCodec||'코덱 미확인')
-      :'확인 불가';
+      ?specialMp4?(chosen.videoCodec||'사이트 코덱 미표기'):
+        (chosen.fps?chosen.fps+' FPS · ':'')+(chosen.videoCodec||'사이트 코덱 미표기')
+      :'사이트 코덱/FPS 미표기';
     $('detail-note').textContent=info
       ?'제공 화질: '+variants.map(v=>v.height+'p').join(' · ')+
         (specialMp4?'. 사이트 API가 반환한 실제 MP4 화질입니다.':
@@ -86,23 +86,30 @@ function showDetails(source, result) {
       :(result.qualityBasis==='manifest'||result.qualityBasis==='native-curl-manifest')
         ?'최대 '+height+'p (재생목록 검증)'
       :result.qualityBasis==='file-head-site-label'?height+'p (사이트 표기·파일 크기 확인)'
+      :result.qualityBasis==='native-ffmpeg'?height+'p (컨테이너 확인)'
       :result.qualityBasis==='player-definition'?height+'p (사이트 제공·검증 전)'
       :result.qualityBasis==='url-pattern'?height+'p (URL 표기·검증 전)'
-      :height+'p (현재 재생 기준·개별 URL 미검증)')
-    : playerQuality?.height ? playerQuality.height+'p (변경 시도·미검증)' : '확인 불가';
-  $('detail-duration').textContent=formatDuration(result?.duration);
+      :height+'p (현재 재생 기준)')
+    : playerQuality?.height ? playerQuality.height+'p (플레이어 기준)' : '원본 해상도 · 미표기';
+  $('detail-duration').textContent=Number.isFinite(result?.duration)&&result.duration>0
+    ?formatDuration(result.duration):'컨테이너/manifest 미제공';
   const chosenEstimate=rendition?.bandwidth&&result?.duration
     ?Math.round(rendition.bandwidth*result.duration/8):null;
   $('detail-size').textContent=chosenEstimate
     ?'약 '+formatBytes(chosenEstimate)+' (선택 화질 추정)'
-    :rendition?'확인 불가 (선택 화질)'
+    :rendition?'선택 화질 용량 미제공'
     :result?.exactBytes ? formatBytes(result.exactBytes)+' (서버 제공)'
-    :result?.estimatedBytes ? '약 '+formatBytes(result.estimatedBytes)+' (추정)'
-    :'확인 불가';
-  $('detail-format').textContent=source?.kind==='FILE'?(result?.formatMime||source?.mime||'직접 파일')+' · 직접 파일':
+    :result?.estimatedBytes ? '약 '+formatBytes(result.estimatedBytes)+' (비트레이트 추정)'
+    :'서버 미제공';
+  $('detail-format').textContent=result?.format||
+    (source?.kind==='FILE'?(result?.formatMime||source?.mime||'직접 파일')+' · 직접 파일':
     source?.kind==='HLS'?'HLS / M3U8':source?.kind==='DASH'?'MPEG-DASH / MPD':
-    source?.kind==='MSS'?'Smooth Streaming':source?.kind||'—';
-  $('detail-codec').textContent='스트림 코덱은 내려받기 후 확정';
+    source?.kind==='MSS'?'MSS / ISM':source?.kind||'Media stream');
+  const codecParts=[];
+  if(Number.isFinite(result?.fps)&&result.fps>0)codecParts.push(result.fps.toFixed(2).replace(/\.00$/,'')+' FPS');
+  if(result?.videoCodec)codecParts.push(result.videoCodec);
+  if(result?.audioCodec)codecParts.push(result.audioCodec);
+  $('detail-codec').textContent=codecParts.length?codecParts.join(' · '):'코덱/FPS 미표기';
   const qualities=[...new Set((result?.variants||[]).map(v=>v.height).filter(Boolean))]
     .sort((a,b)=>b-a).map(h=>h+'p');
   $('detail-note').textContent=result?.note||
@@ -149,9 +156,7 @@ async function analyseSelected(force=false) {
   let result=await probeSource(item,playerMeta);
   let effectiveItem=item;
   if(token!==analysisToken)return;
-  if(item.kind==='HLS' &&
-     (result?.stale===true || result?.reachable===false ||
-      !Array.isArray(result?.variants) || result.variants.length===0)){
+  if(item.kind==='HLS'){
     try{
       const native=await call('NATIVE_STREAM_METADATA',{url:item.url});
       if(token!==analysisToken)return;
@@ -161,14 +166,42 @@ async function analyseSelected(force=false) {
         result={...result,
           height:native.height??result.height,
           width:native.width??result.width,
+          fps:native.fps??result.fps,
           duration:native.duration??result.duration,
           estimatedBytes:native.estimatedBytes??result.estimatedBytes,
-          variants:Array.isArray(native.formats)?native.formats:result.variants,
+          variants:Array.isArray(native.formats)&&native.formats.length?native.formats:result.variants,
+          format:native.format||'HLS / M3U8',
+          videoCodec:native.videoCodec||result.videoCodec||null,
+          audioCodec:native.audioCodec||result.audioCodec||null,
+          bitrate:native.bitrate??result.bitrate??null,
           qualityBasis:'native-curl-manifest',
           reachable:true,stale:false,httpStatus:200,
           note:native.refreshed
-            ?'만료된 화질 주소를 자동 재발급한 뒤 재생목록을 검증했습니다.'
-            :'Windows curl로 HLS 재생목록을 직접 검증했습니다.'};
+            ?'만료된 화질 주소를 자동 재발급한 뒤 재생목록/코덱 메타데이터를 검증했습니다.'
+            :'Windows curl + FFmpeg로 HLS 재생목록/컨테이너 메타데이터를 검증했습니다.'};
+      }
+    }catch{}
+  }else if(['FILE','DASH','MSS'].includes(item.kind)){
+    try{
+      const native=await call('NATIVE_MEDIA_METADATA',{url:item.url});
+      if(token!==analysisToken)return;
+      if(native?.ok){
+        result={...result,
+          height:native.height??result.height,
+          width:native.width??result.width,
+          fps:native.fps??result.fps,
+          duration:native.duration??result.duration,
+          exactBytes:native.exactBytes??result.exactBytes,
+          estimatedBytes:native.exactBytes?result.estimatedBytes:
+            (native.estimatedBytes??result.estimatedBytes),
+          format:native.format||result.format||null,
+          videoCodec:native.videoCodec||result.videoCodec||null,
+          audioCodec:native.audioCodec||result.audioCodec||null,
+          bitrate:native.bitrate??result.bitrate??null,
+          variants:Array.isArray(native.formats)&&native.formats.length?native.formats:result.variants,
+          qualityBasis:'native-ffmpeg',
+          reachable:true,
+          note:'FFmpeg 입력 probe로 길이·해상도·FPS·코덱·컨테이너를 확인했습니다.'};
       }
     }catch{}
   }
@@ -374,9 +407,8 @@ function render() {
           :'본영상 · 선택 '+chosenQuality+'p · 실제 사이트 파일')
         :source.kind+' · '+hint+'직접 영상 소스';
     const url=document.createElement('span');url.className='path';
-    const effective=selected()||source;
     url.textContent=source.kind==='PAGE'
-      ?'이 페이지 영상 · 영상+음성 병합':displaySource(effective);
+      ?'이 페이지 영상 · 영상+음성 병합':displaySource(source);
     button.append(meta,url);
     button.addEventListener('click',()=>{
       chosenUrl=source.url;manualChoice=true;render();void analyseSelected();
@@ -389,8 +421,8 @@ function render() {
   $('download').disabled=!has;
   $('download').hidden=!has;
   $('download').textContent=selected()?.kind==='PAGE'
-    ?'선택 화질로 UVD 가져오기'
-    :'선택한 '+(chosenQuality==='best'?'원본':chosenQuality+'p')+' UVD 가져오기';
+    ?'페이지 추출 결과를 UVD로 가져오기'
+    :'선택한 '+(chosenQuality==='best'?'원본':chosenQuality+'p')+' 실제 영상 UVD로 가져오기';
 }
 async function refresh() {
   const result=await call('GET_MEDIA');
@@ -410,7 +442,7 @@ async function refresh() {
   }
   $('download-page').hidden=requiresDirectMainSource(pageDescriptor)||!!selected();
   if(!$('download-page').hidden)
-    $('download-page').textContent='페이지 영상 UVD로 가져오기';
+    $('download-page').textContent='페이지 주소로 UVD 재분석';
   render();
   void analyseSelected();
   void verifyQualityFamily();
@@ -613,9 +645,16 @@ $('download').addEventListener('click',()=>action(async()=>{
       // For an explicit main-video FILE, HEAD must prove the actual file size.
       if(source.isMain && source.kind==='FILE' && !check?.exactBytes)
         throw Error('선택한 최고 화질 파일의 실제 서버 크기를 검증하지 못했습니다. 다시 분석해 주세요.');
+      const selectedHeight=Number(chosenQuality==='best'
+        ?(source.declaredHeight||source.pathHeight||check?.height||0)
+        :chosenQuality)||null;
       reply=await call('NATIVE_DOWNLOAD',{
         url:source.url,
-        maxQuality:['HLS','DASH','FILE'].includes(source.kind)?chosenQuality:'best'
+        // A direct FILE URL is already an exact rendition. maxQuality is only
+        // a selector/cap for manifest/page extraction; selectedHeight carries
+        // the UI hint for an exact direct file.
+        maxQuality:['HLS','DASH'].includes(source.kind)?chosenQuality:'best',
+        selectedHeight
       });
     }
     if(!reply?.ok)throw Error(String(reply?.error||'Host returned no acknowledgment').slice(0,170));

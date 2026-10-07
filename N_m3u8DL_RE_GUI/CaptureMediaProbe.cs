@@ -17,7 +17,8 @@ internal static class CaptureMediaProbe
     internal sealed record Variant(int Height,long Bandwidth,long? EstimatedBytes);
     internal sealed record Result(bool Accessible,long? Bytes,bool Approximate,
         double? Duration,int? Height,IReadOnlyList<int> Heights,
-        IReadOnlyList<Variant> Variants,string Note);
+        IReadOnlyList<Variant> Variants,string Note,
+        string Format="",string Codec="",int? Width=null,double? Fps=null,long? Bitrate=null);
 
     internal static async Task<Result> InspectAsync(CapturedRequest source,CancellationToken token)
     {
@@ -25,6 +26,11 @@ internal static class CaptureMediaProbe
         var temp=Path.Combine(Path.GetTempPath(),"uvd-probe-"+Guid.NewGuid().ToString("N")+".m3u8");
         try
         {
+            var ffmpeg=await FfmpegMediaProbe.ProbeAsync(
+                ResolveFfmpegPath(),source.Url,
+                source.Headers.Select(h=>new KeyValuePair<string,string>(h.Name,h.Value)),
+                token,TimeSpan.FromSeconds(14));
+
             if(source.Kind==CapturedStreamKind.Media)
             {
                 var row=await CurlAsync(source,source.Url,null,true,token);
@@ -34,22 +40,50 @@ internal static class CaptureMediaProbe
                     ?n:row.Status==200 && long.TryParse(row.Meta.Split('|').LastOrDefault(),out var length)
                     ?length:null;
                 var pathHeight=HeightFromPath(original.AbsolutePath);
-                return new Result(row.Status is 200 or 206,total,false,null,pathHeight,
-                    pathHeight.HasValue?new[]{pathHeight.Value}:Array.Empty<int>(),
+                var height=ffmpeg.Height??pathHeight;
+                var mediaHeights=height.HasValue?new[]{height.Value}:Array.Empty<int>();
+                var accessible=row.Status is 200 or 206 || ffmpeg.Success;
+                var format=!string.IsNullOrWhiteSpace(ffmpeg.Format)
+                    ?ffmpeg.Format:Path.GetExtension(original.AbsolutePath).TrimStart('.').ToUpperInvariant();
+                return new Result(accessible,total,false,ffmpeg.Duration,height,mediaHeights,
                     Array.Empty<Variant>(),
-                    row.Status is 200 or 206
-                      ?"Direct MP4: exact server size. Other qualities require separately detected URLs."
-                      :"Direct media metadata unavailable (HTTP "+row.Status+").");
+                    accessible
+                      ?"Direct media metadata combined from server byte-range and FFmpeg container probe."
+                      :"Direct media metadata could not be verified.",
+                    format,CombinedCodec(ffmpeg),ffmpeg.Width,ffmpeg.Fps,ffmpeg.Bitrate);
+            }
+            if(source.Kind is CapturedStreamKind.Dash or CapturedStreamKind.Mss)
+            {
+                long? dashEstimate=ffmpeg.Duration is >0 && ffmpeg.Bitrate is >0
+                    ?(long?)Math.Round(ffmpeg.Duration.Value*ffmpeg.Bitrate.Value/8d):null;
+                var dashHeights=ffmpeg.Height is >0?new[]{ffmpeg.Height.Value}:Array.Empty<int>();
+                return new Result(ffmpeg.Success,dashEstimate,dashEstimate.HasValue,ffmpeg.Duration,
+                    ffmpeg.Height,dashHeights,Array.Empty<Variant>(),
+                    ffmpeg.Success
+                      ?"Manifest/container metadata confirmed through FFmpeg input probe."
+                      :"Stream metadata could not be confirmed by FFmpeg.",
+                    ffmpeg.Format,CombinedCodec(ffmpeg),ffmpeg.Width,ffmpeg.Fps,ffmpeg.Bitrate);
             }
             if(source.Kind!=CapturedStreamKind.Hls)
-                return new Result(false,null,false,null,null,Array.Empty<int>(),
-                    Array.Empty<Variant>(),
-                    "Automatic metadata for this stream type is not available.");
+                return new Result(ffmpeg.Success,null,false,ffmpeg.Duration,ffmpeg.Height,
+                    ffmpeg.Height is >0?new[]{ffmpeg.Height.Value}:Array.Empty<int>(),
+                    Array.Empty<Variant>(),ffmpeg.Note,ffmpeg.Format,CombinedCodec(ffmpeg),
+                    ffmpeg.Width,ffmpeg.Fps,ffmpeg.Bitrate);
             var master=await CurlAsync(source,source.Url,temp,false,token);
             if(master.Status!=200 || !master.Body.StartsWith("#EXTM3U",StringComparison.Ordinal))
-                return new Result(false,null,false,null,null,Array.Empty<int>(),
+            {
+                long? fallbackEstimate=ffmpeg.Duration is >0 && ffmpeg.Bitrate is >0
+                    ?(long?)Math.Round(ffmpeg.Duration.Value*ffmpeg.Bitrate.Value/8d):null;
+                return new Result(ffmpeg.Success,fallbackEstimate,fallbackEstimate.HasValue,
+                    ffmpeg.Duration,ffmpeg.Height,
+                    ffmpeg.Height is >0?new[]{ffmpeg.Height.Value}:Array.Empty<int>(),
                     Array.Empty<Variant>(),
-                    "HLS manifest could not be inspected (HTTP "+master.Status+").");
+                    ffmpeg.Success
+                      ?"HLS manifest curl probe was limited, but FFmpeg confirmed stream metadata."
+                      :"HLS metadata could not be inspected (HTTP "+master.Status+").",
+                    string.IsNullOrWhiteSpace(ffmpeg.Format)?"HLS / M3U8":ffmpeg.Format,
+                    CombinedCodec(ffmpeg),ffmpeg.Width,ffmpeg.Fps,ffmpeg.Bitrate);
+            }
 
             var rows=new List<(int Height,long Bandwidth,string Uri)>();
             var lines=Regex.Split(master.Body,@"\r?\n");
@@ -80,10 +114,13 @@ internal static class CaptureMediaProbe
                 if(double.TryParse(m.Groups[1].Value,NumberStyles.Float,
                     CultureInfo.InvariantCulture,out var seconds))duration+=seconds;
             var inferred=HeightFromPath(original.AbsolutePath);
-            var heightValue=chosen.Height>0?chosen.Height:inferred;
+            var heightValue=chosen.Height>0?chosen.Height:(ffmpeg.Height??inferred);
+            var effectiveDuration=duration>0?duration:ffmpeg.Duration??0d;
             long? estimated=null;
-            if(duration>0 && chosen.Bandwidth>0)
-                estimated=(long)Math.Round(duration*chosen.Bandwidth/8d);
+            if(effectiveDuration>0 && chosen.Bandwidth>0)
+                estimated=(long)Math.Round(effectiveDuration*chosen.Bandwidth/8d);
+            else if(effectiveDuration>0 && ffmpeg.Bitrate is >0)
+                estimated=(long)Math.Round(effectiveDuration*ffmpeg.Bitrate.Value/8d);
             // Standalone HLS playlists may omit BANDWIDTH: estimate their size
             // from five byte-range segment lengths. Never label it exact.
             if(!estimated.HasValue && !media.Contains("#EXT-X-KEY:",StringComparison.Ordinal))
@@ -115,15 +152,20 @@ internal static class CaptureMediaProbe
                 .Select(g=>g.OrderByDescending(r=>r.Bandwidth).First())
                 .OrderByDescending(r=>r.Height)
                 .Select(r=>new Variant(r.Height,r.Bandwidth,
-                    duration>0&&r.Bandwidth>0
-                        ?(long?)Math.Round(duration*r.Bandwidth/8d):null))
+                    effectiveDuration>0&&r.Bandwidth>0
+                        ?(long?)Math.Round(effectiveDuration*r.Bandwidth/8d):null))
                 .ToArray();
+            var mergedHeights=heights.Length>0?heights:
+                heightValue.HasValue?new[]{heightValue.Value}:Array.Empty<int>();
             return new Result(true,estimated,estimated.HasValue,
-                duration>0?duration:null,heightValue,
-                heights.Length>0?heights:inferred.HasValue?new[]{inferred.Value}:Array.Empty<int>(),
-                variants,
-                estimated.HasValue?"HLS total size is approximate (manifest bitrate or sampled segment lengths)."
-                    : "HLS is accessible. Exact total size is not advertised by this playlist.");
+                effectiveDuration>0?effectiveDuration:null,heightValue,
+                mergedHeights,variants,
+                estimated.HasValue
+                    ?"HLS duration/quality confirmed; total size is estimated from playlist or stream bitrate."
+                    :"HLS stream metadata confirmed; exact total size is not advertised.",
+                string.IsNullOrWhiteSpace(ffmpeg.Format)?"HLS / M3U8":ffmpeg.Format,
+                CombinedCodec(ffmpeg),ffmpeg.Width,ffmpeg.Fps,
+                chosen.Bandwidth>0?chosen.Bandwidth:ffmpeg.Bitrate);
         }
         catch(OperationCanceledException){throw;}
         catch(Exception){return new Result(false,null,false,null,null,Array.Empty<int>(),
@@ -138,6 +180,24 @@ internal static class CaptureMediaProbe
         return m.Success?int.Parse(m.Groups[1].Value):null;
     }
 
+    private static string ResolveFfmpegPath()
+    {
+        var runtime=Path.Combine(AppContext.BaseDirectory,"Runtime","ffmpeg.exe");
+        if(File.Exists(runtime))return runtime;
+        var local=Path.Combine(AppContext.BaseDirectory,"ffmpeg.exe");
+        return local;
+    }
+
+    private static string CombinedCodec(FfmpegMediaMetadata metadata)
+    {
+        if(!string.IsNullOrWhiteSpace(metadata.VideoCodec) &&
+           !string.IsNullOrWhiteSpace(metadata.AudioCodec))
+            return metadata.VideoCodec+" + "+metadata.AudioCodec;
+        if(!string.IsNullOrWhiteSpace(metadata.VideoCodec))return metadata.VideoCodec;
+        if(!string.IsNullOrWhiteSpace(metadata.AudioCodec))return metadata.AudioCodec;
+        return "Stream codec not advertised";
+    }
+
     private static async Task<(int Status,string Meta,string Body)> CurlAsync(
         CapturedRequest source,string url,string? output,bool singleByte,CancellationToken token)
     {
@@ -149,7 +209,11 @@ internal static class CaptureMediaProbe
         foreach(var a in new[]{"--silent","--show-error","--location",
             "--proto","=https,http","--proto-redir","=https,http",
             "--connect-timeout","7","--max-time","16"})args.Add(a);
-        if(singleByte){args.Add("--range");args.Add("0-0");}
+        if(singleByte)
+        {
+            args.Add("--range");args.Add("0-0");
+            args.Add("--max-filesize");args.Add("1048576");
+        }
         else {args.Add("--max-filesize");args.Add("2097152");}
         args.Add("--output");args.Add(output??"NUL");
         args.Add("--write-out");args.Add("%{http_code}|%header{content-range}|%header{content-length}");

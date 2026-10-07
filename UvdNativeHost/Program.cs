@@ -70,13 +70,42 @@ static class Program
                 Reply(StreamMetadata.ProbeHls(target,streamHeaders));
                 return 0;
             }
+            if (Get(root, "type", 24) == "MEDIA_METADATA")
+            {
+                var target=Get(root,"url",8192);
+                if(!NetworkTargetGuard.IsAllowedHttpUrl(target,out _))
+                    throw new InvalidDataException("Invalid or non-public media URL.");
+                var mediaKind=Get(root,"kind",10);
+                if(mediaKind is not ("FILE" or "HLS" or "DASH" or "MSS"))
+                    throw new InvalidDataException("Unsupported media metadata kind.");
+                var mediaHeaders=new System.Collections.Generic.List<StreamMetadata.HeaderValue>();
+                if(root.TryGetProperty("headers",out var mediaEntries) &&
+                   mediaEntries.ValueKind==JsonValueKind.Array)
+                {
+                    if(mediaEntries.GetArrayLength()>12)
+                        throw new InvalidDataException("Too many headers.");
+                    foreach(var entry in mediaEntries.EnumerateArray())
+                    {
+                        var name=Get(entry,"name",40);
+                        var value=Get(entry,"value",2048);
+                        if(!AllowedHeaders.Contains(name,StringComparer.OrdinalIgnoreCase) ||
+                           value.IndexOfAny(['\r','\n','\0'])>=0)
+                            throw new InvalidDataException("Unsupported header.");
+                        mediaHeaders.Add(new StreamMetadata.HeaderValue(name,value));
+                    }
+                }
+                Reply(mediaKind=="HLS"
+                    ?StreamMetadata.ProbeHls(target,mediaHeaders)
+                    :MediaMetadata.Probe(target,mediaKind,mediaHeaders,AppContext.BaseDirectory));
+                return 0;
+            }
             if (Get(root, "type", 24) == "PING")
             {
                 var installedExe=Path.Combine(InstallRoot(),
                     "UniversalVideoDownloader.exe");
                 var folder=Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "UniversalVideoDownloader", "NativeInbox");
+                    "UniversalVideoDownloader", "NativeInboxV2");
                 bool inboxWritable=false;
                 try
                 {
@@ -88,11 +117,11 @@ static class Program
                 }
                 catch (IOException) { }
                 catch (UnauthorizedAccessException) { }
-                Reply(new { ok = true, nativeHost = "com.uvd.bridge", version = 10,
+                Reply(new { ok = true, nativeHost = "com.uvd.bridge", version = 11,
                     appPresent=File.Exists(installedExe), inboxWritable, pageSupported=true,
                     qualitySelectionSupported=true, pageMetadataSupported=true,
-                    streamMetadataSupported=true, reviewBeforeDownload=true,
-                    renditionHandoffSupported=true });
+                    streamMetadataSupported=true, mediaMetadataSupported=true,
+                    reviewBeforeDownload=true, renditionHandoffSupported=true });
                 return 0;
             }
             if (Get(root, "type", 24) != "DOWNLOAD" || root.GetProperty("version").GetInt32() != 1)
@@ -106,6 +135,15 @@ static class Program
             var quality=root.TryGetProperty("maxQuality",out var q)?Get(root,"maxQuality",4):"best";
             if (quality is not ("best" or "4320" or "2880" or "2160" or "1440" or "1080" or "720" or "480" or "360" or "240"))
                 throw new InvalidDataException("Unsupported quality.");
+            int? selectedHeight=null;
+            if(root.TryGetProperty("selectedHeight",out var selectedHeightNode) &&
+               selectedHeightNode.ValueKind==JsonValueKind.Number &&
+               selectedHeightNode.TryGetInt32(out var parsedSelectedHeight))
+            {
+                if(parsedSelectedHeight is <144 or >4320)
+                    throw new InvalidDataException("Invalid selected height.");
+                selectedHeight=parsedSelectedHeight;
+            }
             if (kind=="MSS" && quality!="best")
                 throw new InvalidDataException("MSS requires best/exact URL.");
             // FILE may carry the extension's selected-height hint for review UI.
@@ -187,30 +225,48 @@ static class Program
             var exe = Path.Combine(installRoot, "UniversalVideoDownloader.exe");
             if (!File.Exists(exe)) throw new FileNotFoundException("UVD executable is not installed next to native host.");
             var inbox = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "UniversalVideoDownloader", "NativeInbox");
+                "UniversalVideoDownloader", "NativeInboxV2");
             Directory.CreateDirectory(inbox);
             var id = Guid.NewGuid().ToString("N");
-            var data = JsonSerializer.Serialize(new DownloadRequest(
-                1, url, kind, headers.ToArray(), quality, pageUrl, suggestedTitle,
-                renditions.OrderByDescending(x=>x.height).ToArray()));
-            var tmp = Path.Combine(inbox, id + ".tmp");
-            File.WriteAllText(tmp, data, new UTF8Encoding(false));
-            File.Move(tmp, Path.Combine(inbox, id + ".json"));
-            var sameReleaseRunning=Process.GetProcessesByName("UniversalVideoDownloader")
-                .Any(p =>
-                {
-                    try { return string.Equals(Path.GetFullPath(p.MainModule?.FileName??""),
-                        Path.GetFullPath(exe),StringComparison.OrdinalIgnoreCase); }
-                    catch { return false; }
-                    finally { p.Dispose(); }
-                });
-            if (!sameReleaseRunning)
+            object? handoffMetadata=null;
+            if(kind!="PAGE")
             {
                 try
                 {
+                    var metadataHeaders=headers
+                        .Select(h=>new StreamMetadata.HeaderValue(h.name,h.value)).ToArray();
+                    handoffMetadata=kind=="HLS"
+                        ?StreamMetadata.ProbeHls(url,metadataHeaders)
+                        :MediaMetadata.Probe(url,kind,metadataHeaders,AppContext.BaseDirectory);
+                }
+                catch
+                {
+                    // Handoff remains valid even when metadata probing is unavailable.
+                }
+            }
+            var data = JsonSerializer.Serialize(new DownloadRequest(
+                1, url, kind, headers.ToArray(), quality, selectedHeight,
+                pageUrl, suggestedTitle,
+                renditions.OrderByDescending(x=>x.height).ToArray(),
+                handoffMetadata));
+            var tmp = Path.Combine(inbox, id + ".tmp");
+            File.WriteAllText(tmp, data, new UTF8Encoding(false));
+            File.Move(tmp, Path.Combine(inbox, id + ".json"));
+            try { File.Delete(exe+".locked-old"); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+
+            if (!IsCurrentAppRunning())
+            {
+                try
+                {
+                    // Launch the GUI detached from Native Messaging stdio.
+                    // With UseShellExecute=false the GUI inherits Chrome's native
+                    // stdin/stdout handles, so sendNativeMessage can receive a frame
+                    // but never observe the one-shot host connection closing.
                     Process.Start(new ProcessStartInfo(exe)
                     {
-                        UseShellExecute = false,
+                        UseShellExecute = true,
                         WorkingDirectory = installRoot
                     });
                 }
@@ -239,6 +295,26 @@ static class Program
             return 0;
         }
     }
+    const string NativeInboxInstanceMarkerName = @"Local\UVD.NativeInboxV2.App";
+
+    static bool IsCurrentAppRunning()
+    {
+        try
+        {
+            using var marker = Mutex.OpenExisting(NativeInboxInstanceMarkerName);
+            return true;
+        }
+        catch (WaitHandleCannotBeOpenedException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // The marker exists but is not openable by this process.
+            return true;
+        }
+    }
+
     static string Get(JsonElement parent, string key, int max)
     {
         if (!parent.TryGetProperty(key, out var value) || value.ValueKind != JsonValueKind.String)
@@ -260,5 +336,6 @@ static class Program
     record Header(string name, string value);
     record Rendition(int height, string url, string kind, Header[] headers);
     record DownloadRequest(int version, string url, string kind, Header[] headers,
-        string maxQuality, string? pageUrl, string? title, Rendition[] renditions);
+        string maxQuality, int? selectedHeight, string? pageUrl, string? title,
+        Rendition[] renditions, object? metadata);
 }

@@ -835,6 +835,54 @@
                             <TextBlock Text="대부분의 영상은 이 화면을 수정할 필요가 없습니다. 서버가 Referer/헤더를 요구하거나 프록시·재시도·속도 제한이 필요할 때만 사용하세요."
                                        TextWrapping="Wrap" FontSize="12"/>
                         </Border>
+
+                        <GroupBox Header="Chrome 확장 연동" Style="{StaticResource GroupBoxStyle}">
+                            <StackPanel Margin="0,4">
+                                <TextBlock x:Name="TextBlock_ChromeIntegrationStatus"
+                                           Text="연동 상태 확인 중…"
+                                           TextWrapping="Wrap"
+                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                           Margin="0,0,0,8"
+                                           AutomationProperties.Name="Chrome Integration Status"/>
+                                <TextBlock Text="처음 한 번만 확장프로그램을 로드하면 이후에는 UVD가 Native Messaging 등록 경로를 자동으로 확인하고 복구합니다."
+                                           TextWrapping="Wrap"
+                                           FontSize="11"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           Margin="0,0,0,8"/>
+                                <WrapPanel>
+                                    <Button x:Name="Button_ChromeIntegrationSetup"
+                                            Content="연동 설정 / 복구"
+                                            Style="{StaticResource ButtonStyle}"
+                                            Margin="0,0,8,6"
+                                            Click="Button_ChromeIntegrationSetup_Click"
+                                            AutomationProperties.Name="Set up or repair Chrome integration"/>
+                                    <Button x:Name="Button_ChromeIntegrationTest"
+                                            Content="연결 테스트"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Margin="0,0,8,6"
+                                            Click="Button_ChromeIntegrationTest_Click"
+                                            AutomationProperties.Name="Test Chrome native host connection"/>
+                                    <Button x:Name="Button_ChromeExtensionOpen"
+                                            Content="확장 설치 열기"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Margin="0,0,8,6"
+                                            Click="Button_ChromeExtensionOpen_Click"
+                                            AutomationProperties.Name="Open Chrome extension installation"/>
+                                    <Button x:Name="Button_ChromeExtensionFolder"
+                                            Content="확장 폴더 열기"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Margin="0,0,0,6"
+                                            Click="Button_ChromeExtensionFolder_Click"
+                                            AutomationProperties.Name="Open UVD Chrome extension folder"/>
+                                </WrapPanel>
+                                <TextBlock Text="고정 Extension ID: mpncbnfjghomdnfaakmepbbkmdffeage"
+                                           FontSize="10"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,4,0,0"/>
+                            </StackPanel>
+                        </GroupBox>
+
                         <GroupBox Header="네트워크 예외 처리" Style="{StaticResource GroupBoxStyle}">
                             <Grid Margin="0,4">
                                 <Grid.ColumnDefinitions>

@@ -22,10 +22,14 @@ Pasted URLs, Auto Detect and Chrome Source Capture converge on the same review f
 - detected title;
 - actual supported heights;
 - duration;
-- estimated or exact size where available;
+- exact server size or bitrate-based estimate where available;
+- actual resolution and frame rate when exposed by the container/manifest;
 - container / transport information;
+- video and audio codec information;
 - filename and destination;
 - the selected quality.
+
+Metadata uses layered probes rather than site-specific guesses: site/page metadata first, manifest parsing for HLS/DASH/MSS, byte-range size checks for direct files, and a bounded FFmpeg input probe as the common fallback. Estimated values are explicitly labeled; UVD does not invent a resolution, codec, duration or file size when the source does not expose one.
 
 A browser-extension handoff opens or focuses UVD for review rather than silently starting a download.
 
@@ -35,10 +39,21 @@ The unpacked extension lives in `UVD-Source-Capture/`.
 
 The extension uses broad HTTP(S) host permission because a page and its media CDN frequently use different origins. Media observation is scoped in application logic to a tab after the user starts detection. Cookie and Authorization headers are not exported to the Native Messaging host.
 
-After loading the unpacked extension in `chrome://extensions`, copy its extension ID and register the native bridge:
+The extension has a fixed manifest key, so its Chrome extension ID remains stable after the UVD folder is moved. In a packaged build, use **고급 / 문제 해결 → Chrome 확장 연동**:
+
+1. Press **확장 설치 열기**.
+2. In `chrome://extensions`, enable Developer mode and choose **Load unpacked**.
+3. Select the opened `Extension\UVD-Source-Capture` folder.
+4. Press **연결 테스트** in UVD.
+
+UVD automatically creates or repairs the per-user Native Messaging registration on startup and when **연동 설정 / 복구** is pressed. In the extension popup, **페이지 주소로 UVD 재분석** intentionally sends the web-page URL back through UVD's page extractor, while **선택한 실제 영상 UVD로 가져오기** sends the exact selected MP4/HLS/DASH URL, its selected height and verified metadata. The page URL is retained only as recovery context for a selected-media handoff and never replaces that exact media URL.
+
+The fixed extension ID is `mpncbnfjghomdnfaakmepbbkmdffeage`.
+
+The PowerShell installer remains as a fallback and no longer requires an extension-ID argument:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\Setup\install-native-host.ps1 -ExtensionId <32-character-extension-id>
+powershell -ExecutionPolicy Bypass -File .\Setup\install-native-host.ps1
 ```
 
 To remove the registration:
@@ -47,7 +62,7 @@ To remove the registration:
 powershell -ExecutionPolicy Bypass -File .\Setup\uninstall-native-host.ps1
 ```
 
-The Native Messaging manifest is generated locally because it contains the installation path and extension ID. It must not be committed to Git.
+The Native Messaging manifest is generated locally because it contains the installation path. It must not be committed to Git.
 
 ## Source build
 

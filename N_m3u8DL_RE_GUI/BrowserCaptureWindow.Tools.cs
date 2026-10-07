@@ -246,24 +246,30 @@ public sealed partial class BrowserCaptureWindow
         var sizeText = size is > 0
             ? (format?.ExactBytes is > 0 ? "" : "약 ") +
               (size.Value / 1048576d).ToString("N1") + " MiB"
-            : "확인 불가";
+            : "사이트 미제공";
         var durationText = metadata.Duration.HasValue
             ? TimeSpan.FromSeconds(metadata.Duration.Value).ToString(@"hh\:mm\:ss")
-            : "확인 불가";
+            : "사이트 미제공";
         var qualities = metadata.Heights.Count > 0
             ? string.Join(" · ", metadata.Heights.Select(h => h + "p"))
-            : "확인 불가";
+            : "원본 해상도 · 사이트 미표기";
         var selectedQuality = format is null ? "자동" : format.Height + "p";
-        var codec = format?.VideoCodec ?? "확인 불가";
+        var codec = format?.VideoCodec ?? "사이트 코덱 미표기";
         var container = format?.Extension ?? metadata.Container;
+        var fps = format?.Fps is > 0 ? format.Fps + " FPS" : "FPS 미표기";
+        var resolution = format?.Width is > 0 && format.Height > 0
+            ? format.Width + "×" + format.Height
+            : selectedQuality;
 
         _metadata.Text =
-            "영상: " + (metadata.Title ?? "제목 확인 불가") +
+            "영상: " + (metadata.Title ?? "페이지 영상") +
             "\n선택: " + selectedQuality +
+            "  ·  해상도: " + resolution +
             "  ·  길이: " + durationText +
             "  ·  용량: " + sizeText +
-            "  ·  형식: " + container +
+            "\n형식: " + container +
             "  ·  코덱: " + codec +
+            "  ·  FPS: " + fps +
             "\n제공 화질: " + qualities;
     }
 

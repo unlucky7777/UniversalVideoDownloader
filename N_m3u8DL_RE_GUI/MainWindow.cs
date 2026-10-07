@@ -101,7 +101,13 @@ public partial class MainWindow : Window
 
 	private sealed record NativeRendition(int height, string url, string kind, NativeHeader[] headers);
 
-	private sealed record NativeJob(int version, string url, string kind, NativeHeader[] headers, string maxQuality, string? pageUrl, string? title, NativeRendition[]? renditions);
+	private sealed record NativeMetadata(bool ok, double? duration, int? width, int? height,
+		double? fps, long? exactBytes, long? estimatedBytes, bool approximate,
+		string? format, string? videoCodec, string? audioCodec, long? bitrate);
+
+	private sealed record NativeJob(int version, string url, string kind, NativeHeader[] headers,
+		string maxQuality, int? selectedHeight, string? pageUrl, string? title,
+		NativeRendition[]? renditions, NativeMetadata? metadata);
 
 	private bool _userCancelledDownload;
 
@@ -318,6 +324,8 @@ public partial class MainWindow : Window
 
 	private readonly IConfigService _configService;
 
+	private readonly ChromeIntegrationService _chromeIntegrationService = new ChromeIntegrationService();
+
 	private readonly IBatchScriptService _batchScriptService;
 
 	private readonly IDragDropService _dragDropService;
@@ -400,7 +408,7 @@ public partial class MainWindow : Window
 
 	private static readonly SolidColorBrush DefaultStatusBrush = CreateFrozenBrush(Color.FromRgb(136, 136, 168));
 
-	private static string NativeInboxPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UniversalVideoDownloader", "NativeInbox");
+	private static string NativeInboxPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UniversalVideoDownloader", "NativeInboxV2");
 
 	private static string UserDataDirectory
 	{
@@ -919,16 +927,22 @@ public partial class MainWindow : Window
 				select h).Distinct()
 			orderby h descending
 			select h).ToArray();
-		TextBlock_MetaQuality.Text = ((array.Length != 0) ? string.Join(" · ", array.Select((int h) => h + "p")) : "확인 불가");
+		TextBlock_MetaQuality.Text = array.Length != 0
+			? string.Join(" · ", array.Select((int h) => h + "p"))
+			: "원본 해상도 · 서버 미표기";
 		RebuildWebsiteQualityChoices((IReadOnlyCollection<int>)(object)array, (requestedHeight > 0) ? new int?(requestedHeight) : _preferredWebsiteHeight, input);
 		TextBlock textBlock_MetaDuration = TextBlock_MetaDuration;
 		double? duration = result.Duration;
-		textBlock_MetaDuration.Text = ((duration.HasValue && duration.GetValueOrDefault() > 0.0) ? TimeSpan.FromSeconds(result.Duration.Value).ToString("hh\\:mm\\:ss") : "확인 불가");
+		textBlock_MetaDuration.Text = duration.HasValue && duration.GetValueOrDefault() > 0.0
+			? TimeSpan.FromSeconds(result.Duration.Value).ToString("hh\\:mm\\:ss")
+			: "서버/컨테이너 미제공";
 		TextBlock textBlock_MetaSize = TextBlock_MetaSize;
 		long? bytes = result.Bytes;
-		textBlock_MetaSize.Text = ((bytes.HasValue && bytes.GetValueOrDefault() > 0) ? ((result.Approximate ? "약 " : "") + FormatByteSize(result.Bytes.Value)) : "확인 불가");
-		TextBlock_MetaFormat.Text = (string.IsNullOrWhiteSpace(result.Format) ? "확인 불가" : result.Format);
-		TextBlock_MetaCodec.Text = (string.IsNullOrWhiteSpace(result.Codec) ? "확인 불가" : result.Codec);
+		textBlock_MetaSize.Text = bytes.HasValue && bytes.GetValueOrDefault() > 0
+			? (result.Approximate ? "약 " : "") + FormatByteSize(result.Bytes.Value)
+			: "서버 미제공";
+		TextBlock_MetaFormat.Text = string.IsNullOrWhiteSpace(result.Format) ? "Media stream" : result.Format;
+		TextBlock_MetaCodec.Text = string.IsNullOrWhiteSpace(result.Codec) ? "Stream codec not advertised" : result.Codec;
 		TextBlock_MetaNote.Text = result.Note;
 	}
 
@@ -1135,6 +1149,8 @@ public partial class MainWindow : Window
 		switch (direct?.Kind)
 		{
 		case CapturedStreamKind.Hls:
+		case CapturedStreamKind.Dash:
+		case CapturedStreamKind.Mss:
 		case CapturedStreamKind.Media:
 			flag = true;
 			break;
@@ -1169,10 +1185,18 @@ public partial class MainWindow : Window
 				readOnlyList2 = result.Heights;
 			}
 			heights = readOnlyList2;
-			text = ((direct.Kind == CapturedStreamKind.Hls) ? "HLS / M3U8" : Path.GetExtension(new Uri(input).AbsolutePath).TrimStart('.').ToUpperInvariant());
+			text = !string.IsNullOrWhiteSpace(result.Format)
+				? result.Format
+				: direct.Kind switch
+				{
+					CapturedStreamKind.Hls => "HLS / M3U8",
+					CapturedStreamKind.Dash => "MPEG-DASH / MPD",
+					CapturedStreamKind.Mss => "MSS / ISM",
+					_ => Path.GetExtension(new Uri(input).AbsolutePath).TrimStart('.').ToUpperInvariant()
+				};
 			if (string.IsNullOrWhiteSpace(text))
 			{
-				text = "직접 미디어";
+				text = "Media stream";
 			}
 			title = DisplayNameFromUrl(input);
 			if ((object)variant != null)
@@ -1213,13 +1237,49 @@ public partial class MainWindow : Window
 			{
 				approximate = 0;
 			}
-			return new LinkPreviewMetadata(bytes2, (byte)approximate != 0, cachedPageMetadata.Title, cachedPageMetadata.Duration, cachedPageMetadata.Heights, ((object)ytDlpFormatMetadata == null) ? cachedPageMetadata.Container : (ytDlpFormatMetadata.Extension + (cachedPageMetadata.AudioAvailable ? " · 영상+음성 병합" : "")), ytDlpFormatMetadata?.VideoCodec ?? "확인 불가", cachedPageMetadata.Note);
+			string pageFormat = ((object)ytDlpFormatMetadata == null)
+				? cachedPageMetadata.Container
+				: (ytDlpFormatMetadata.Extension + (cachedPageMetadata.AudioAvailable ? " · 영상+음성 병합" : ""));
+			string pageCodec = ytDlpFormatMetadata?.VideoCodec ?? "사이트 코덱 미표기";
+			string pageNote = cachedPageMetadata.Note +
+				(ytDlpFormatMetadata?.Fps is > 0 ? $" · {ytDlpFormatMetadata.Fps} FPS" : "");
+			return new LinkPreviewMetadata(bytes2, (byte)approximate != 0,
+				cachedPageMetadata.Title, cachedPageMetadata.Duration,
+				cachedPageMetadata.Heights, pageFormat, pageCodec, pageNote);
 		}
-		return new LinkPreviewMetadata(null, Approximate: false, null, null, Array.Empty<int>(), string.Empty, string.Empty, cachedPageMetadata?.Error ?? "이 링크에서 메타데이터를 가져오지 못했습니다.");
+		var ffFallback = await FfmpegMediaProbe.ProbeAsync(
+			BundledPath("ffmpeg.exe"), input, requestHeaders, token, TimeSpan.FromSeconds(14));
+		if (ffFallback.Success)
+		{
+			long? fallbackBytes = ffFallback.Duration is > 0 && ffFallback.Bitrate is > 0
+				? (long?)Math.Round(ffFallback.Duration.Value * ffFallback.Bitrate.Value / 8d)
+				: null;
+			var fallbackHeights = ffFallback.Height is > 0
+				? new[] { ffFallback.Height.Value } : Array.Empty<int>();
+			string fallbackCodec =
+				!string.IsNullOrWhiteSpace(ffFallback.VideoCodec) && !string.IsNullOrWhiteSpace(ffFallback.AudioCodec)
+					? ffFallback.VideoCodec + " + " + ffFallback.AudioCodec
+					: !string.IsNullOrWhiteSpace(ffFallback.VideoCodec)
+						? ffFallback.VideoCodec
+						: !string.IsNullOrWhiteSpace(ffFallback.AudioCodec)
+							? ffFallback.AudioCodec : "Stream codec not advertised";
+			string fallbackNote = "페이지 추출기 대신 FFmpeg가 URL의 실제 입력 스트림을 직접 확인했습니다." +
+				(ffFallback.Fps is > 0 ? $" · {ffFallback.Fps:0.##} FPS" : "");
+			return new LinkPreviewMetadata(fallbackBytes, fallbackBytes.HasValue,
+				DisplayNameFromUrl(input), ffFallback.Duration, fallbackHeights,
+				ffFallback.Format, fallbackCodec, fallbackNote);
+		}
+		return new LinkPreviewMetadata(null, Approximate: false, DisplayNameFromUrl(input), null,
+			Array.Empty<int>(), "웹 페이지/미디어", "사이트 메타데이터 미제공",
+			cachedPageMetadata?.Error ?? "사이트가 사전 메타데이터를 제공하지 않았습니다.");
 		IL_02d2:
 		string note = (string)obj;
 		estimatedBytes = variant?.EstimatedBytes;
-		return new LinkPreviewMetadata(bytes, (estimatedBytes.HasValue && estimatedBytes.GetValueOrDefault() > 0) || result.Approximate, title, result.Duration, heights, text, "다운로드 후 확정", note);
+		return new LinkPreviewMetadata(bytes,
+			(estimatedBytes.HasValue && estimatedBytes.GetValueOrDefault() > 0) || result.Approximate,
+			title,result.Duration,heights,text,
+			string.IsNullOrWhiteSpace(result.Codec) ? "Stream codec not advertised" : result.Codec,
+			(result.Fps is > 0 ? note + $" · {result.Fps:0.##} FPS" : note));
 	}
 
 	private static (string Korean, string English)? HelpFor(string key)
@@ -1614,6 +1674,35 @@ public partial class MainWindow : Window
 		return text;
 	}
 
+	private static LinkPreviewMetadata? NativeHandoffPreview(NativeJob job, int? selectedHeight)
+	{
+		NativeMetadata? metadata = job.metadata;
+		if (metadata == null || !metadata.ok)
+		{
+			return null;
+		}
+		long? bytes = metadata.exactBytes ?? metadata.estimatedBytes;
+		bool approximate = !metadata.exactBytes.HasValue &&
+			(metadata.estimatedBytes.HasValue || metadata.approximate);
+		int[] heights = new int?[] { selectedHeight, metadata.height }
+			.Where((int? h) => h is > 0)
+			.Select((int? h) => h!.Value)
+			.Distinct()
+			.OrderByDescending((int h) => h)
+			.ToArray();
+		string format = string.IsNullOrWhiteSpace(metadata.format)
+			? (job.kind == "FILE" ? "Direct media" : job.kind)
+			: metadata.format!;
+		List<string> codecs = new List<string>();
+		if (!string.IsNullOrWhiteSpace(metadata.videoCodec)) codecs.Add(metadata.videoCodec!);
+		if (!string.IsNullOrWhiteSpace(metadata.audioCodec)) codecs.Add(metadata.audioCodec!);
+		string codec = codecs.Count > 0 ? string.Join(" + ", codecs) : "사이트 코덱 미표기";
+		string note = "Chrome 확장프로그램에서 선택한 실제 미디어를 Native Host가 검증했습니다." +
+			(metadata.fps is > 0 ? $" · {metadata.fps:0.##} FPS" : string.Empty);
+		return new LinkPreviewMetadata(bytes, approximate, job.title, metadata.duration,
+			heights, format, codec, note);
+	}
+
 	private int[] NativeRenditionHeightsFor(string? input)
 	{
 		if (string.IsNullOrWhiteSpace(input) || _nativeRenditions.Count == 0)
@@ -1811,27 +1900,13 @@ public partial class MainWindow : Window
 					{
 						throw new InvalidDataException("Invalid native page fallback.");
 					}
-					scheme = nativeJob.pageUrl;
-					int num2;
-					object obj;
-					if (scheme != null && scheme.Length > 0)
-					{
-						num2 = (((object)SiteAdapterRegistry.ResolvePage(nativeJob.pageUrl) != null) ? 1 : 0);
-						if (num2 != 0)
-						{
-							obj = "PAGE";
-							goto IL_0353;
-						}
-					}
-					else
-					{
-						num2 = 0;
-					}
-					obj = nativeJob.kind;
-					goto IL_0353;
-					IL_0353:
-					string text3 = (string)obj;
-					string text4 = ((num2 != 0) ? nativeJob.pageUrl : nativeJob.url);
+
+					NativeHandoffRoute route = NativeHandoffRoutingPolicy.Select(
+						nativeJob.kind, nativeJob.url, nativeJob.pageUrl,
+						nativeJob.selectedHeight, num);
+					int num2 = route.Kind == "PAGE" ? 1 : 0;
+					string text3 = route.Kind;
+					string text4 = route.Url;
 					_nativeRenditions.Clear();
 					if (num2 == 0)
 					{
@@ -1875,7 +1950,8 @@ public partial class MainWindow : Window
 						}
 					}
 					NativeRendition nativeRendition = null;
-					int? num3 = num ?? ((_nativeRenditions.Count > 0) ? new int?(_nativeRenditions.Keys.Max()) : ((int?)null));
+					int? num3 = route.PreferredHeight ??
+						((_nativeRenditions.Count > 0) ? new int?(_nativeRenditions.Keys.Max()) : nativeJob.metadata?.height);
 					if (num3.HasValue && _nativeRenditions.TryGetValue(num3.Value, out NativeRendition value))
 					{
 						nativeRendition = value;
@@ -1896,9 +1972,9 @@ public partial class MainWindow : Window
 					}
 					Directory.CreateDirectory(TextBox_WorkDir.Text);
 					SetLinkedFileName(NativeSuggestedTitle(nativeJob.title));
-					ComboBox comboBox_DownloadEngine = ComboBox_DownloadEngine;
-					flag2 = ((text3 == "FILE" || text3 == "PAGE") ? true : false);
-					comboBox_DownloadEngine.SelectedIndex = ((!flag2) ? 1 : 2);
+					// Keep handoffs on Auto so the primary URL kind decides the
+					// engine consistently: PAGE -> yt-dlp, FILE/HLS/DASH/MSS -> stream.
+					ComboBox_DownloadEngine.SelectedIndex = 0;
 					switch (text3)
 					{
 					case "PAGE":
@@ -1926,9 +2002,26 @@ public partial class MainWindow : Window
 					textBox_SelectVideo.Text = scheme;
 					_previewProbeCts?.Cancel();
 					ScheduleLinkPreview();
-					scheme = nativeJob.maxQuality;
-					flag2 = ((scheme == null || scheme == "best") ? true : false);
-					SetStatus(flag2 ? "Chrome UVD: 가져오기 완료 · 메타데이터·파일명·저장 위치를 확인한 뒤 GO를 누르세요." : ("Chrome UVD: " + nativeJob.maxQuality + "p 선택값 유지 · 설정을 확인한 뒤 GO를 누르세요."));
+					LinkPreviewMetadata? handoffPreview = NativeHandoffPreview(nativeJob, num3);
+					if (text3 != "PAGE" && handoffPreview != null)
+					{
+						_previewPending = false;
+						_previewUnavailable = !handoffPreview.HasAny;
+						_previewTotalBytes = handoffPreview.Bytes;
+						_previewApproximate = handoffPreview.Approximate;
+						_expectedBytes = handoffPreview.Bytes;
+						RenderLinkMetadata(handoffPreview, text4, num3 ?? 0);
+						RenderDownloadTelemetry();
+					}
+					if (text3 == "PAGE")
+					{
+						SetStatus("Chrome UVD: 페이지 주소 가져오기 완료 · UVD가 페이지에서 영상을 다시 추출합니다.");
+					}
+					else
+					{
+						string qualityLabel = num3.HasValue ? num3.Value + "p " : string.Empty;
+						SetStatus("Chrome UVD: 선택한 " + qualityLabel + "실제 미디어 URL 가져오기 완료 · 설정을 확인한 뒤 GO를 누르세요.");
+					}
 					BringNativeHandoffToFront();
 				}
 				catch (Exception)
@@ -2883,6 +2976,7 @@ public partial class MainWindow : Window
 			});
 			CheckForResumableJob();
 			StartNativeInbox();
+			RefreshChromeIntegrationStatus(autoRepair: true);
 		}
 	}
 
@@ -4289,6 +4383,96 @@ public partial class MainWindow : Window
 	private void Menu_GetDownloader(object sender, RoutedEventArgs e)
 	{
 		StartShellTarget("https://github.com/nilaoda/N_m3u8DL-RE/releases");
+	}
+
+	private void RefreshChromeIntegrationStatus(bool autoRepair)
+	{
+		try
+		{
+			ChromeIntegrationStatus status = autoRepair
+				? _chromeIntegrationService.RegisterOrRepair()
+				: _chromeIntegrationService.GetStatus();
+			TextBlock_ChromeIntegrationStatus.Text = status.Summary;
+		}
+		catch (Exception ex)
+		{
+			TextBlock_ChromeIntegrationStatus.Text = "연결 필요 · " + ex.Message;
+		}
+	}
+
+	private void Button_ChromeIntegrationSetup_Click(object sender, RoutedEventArgs e)
+	{
+		try
+		{
+			ChromeIntegrationStatus status = _chromeIntegrationService.RegisterOrRepair();
+			TextBlock_ChromeIntegrationStatus.Text = status.Summary;
+			SetStatus("Chrome 확장 연동 등록을 갱신했습니다.");
+		}
+		catch (Exception ex)
+		{
+			TextBlock_ChromeIntegrationStatus.Text = "연결 실패 · " + ex.Message;
+			SetStatus("Chrome 연동 실패: " + ex.Message, isError: true);
+		}
+	}
+
+	private async void Button_ChromeIntegrationTest_Click(object sender, RoutedEventArgs e)
+	{
+		Button_ChromeIntegrationTest.IsEnabled = false;
+		try
+		{
+			ChromeIntegrationStatus status = _chromeIntegrationService.RegisterOrRepair();
+			string result = await _chromeIntegrationService.TestNativeHostAsync();
+			TextBlock_ChromeIntegrationStatus.Text = status.Summary + " · PING 정상";
+			SetStatus(result);
+		}
+		catch (Exception ex)
+		{
+			TextBlock_ChromeIntegrationStatus.Text = "연결 테스트 실패 · " + ex.Message;
+			SetStatus("Chrome 연동 테스트 실패: " + ex.Message, isError: true);
+		}
+		finally
+		{
+			Button_ChromeIntegrationTest.IsEnabled = true;
+		}
+	}
+
+	private void Button_ChromeExtensionOpen_Click(object sender, RoutedEventArgs e)
+	{
+		try
+		{
+			_chromeIntegrationService.RegisterOrRepair();
+			try
+			{
+				Clipboard.SetText(_chromeIntegrationService.ExtensionDirectory);
+			}
+			catch
+			{
+			}
+			_chromeIntegrationService.OpenChromeExtensionsPage();
+			StartShellTarget(_chromeIntegrationService.ExtensionDirectory);
+			RefreshChromeIntegrationStatus(autoRepair: false);
+			MessageBox.Show(
+				"Chrome 확장관리에서 개발자 모드를 켠 뒤 '압축해제된 확장 프로그램을 로드'를 누르고 열린 UVD-Source-Capture 폴더를 선택하세요.\n\n폴더 경로는 클립보드에도 복사했습니다.",
+				"UVD Chrome 확장 설치",
+				MessageBoxButton.OK,
+				MessageBoxImage.Information);
+		}
+		catch (Exception ex)
+		{
+			SetStatus("Chrome 확장 설치 화면을 열지 못했습니다: " + ex.Message, isError: true);
+		}
+	}
+
+	private void Button_ChromeExtensionFolder_Click(object sender, RoutedEventArgs e)
+	{
+		try
+		{
+			StartShellTarget(_chromeIntegrationService.ExtensionDirectory);
+		}
+		catch (Exception ex)
+		{
+			SetStatus("확장프로그램 폴더를 열지 못했습니다: " + ex.Message, isError: true);
+		}
 	}
 
 	private static void StartShellTarget(string targetPath)

@@ -580,6 +580,24 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse) => {
       const outcome=await probeNativeStreamWithRefresh(tabId,source,stored);
       return outcome.reply;
     }
+    if(message.type==='NATIVE_MEDIA_METADATA') {
+      const key=tabKey(tabId);
+      const stored=(await chrome.storage.session.get(key))[key]||[];
+      const source=stored.find(item=>item.url===message.url);
+      if(!source)throw Error('Selected source is no longer in the active tab.');
+      if(!['FILE','HLS','DASH','MSS'].includes(source.kind))
+        throw Error('Unsupported media metadata kind.');
+      if(source.kind==='HLS'){
+        const outcome=await probeNativeStreamWithRefresh(tabId,source,stored);
+        return outcome.reply;
+      }
+      const reply=await chrome.runtime.sendNativeMessage('com.uvd.bridge',{
+        type:'MEDIA_METADATA',url:source.url,kind:source.kind,
+        headers:trustedMediaHeaders(source,stored)
+      });
+      if(!reply?.ok)throw Error(String(reply?.error||'Native media metadata unavailable').slice(0,180));
+      return reply;
+    }
     if(message.type==='NATIVE_DOWNLOAD') {
       // Stopping capture retains the user's previously captured candidates
       // for this tab until Clear or navigation; allow those to be downloaded.
@@ -604,6 +622,12 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse) => {
         throw Error('Direct files have an exact quality URL, not a quality cap.');
       if(source.kind==='MSS'&&cap!=='best')
         throw Error('MSS rendition selection is unavailable.');
+      const hintedHeight=Number(message?.selectedHeight);
+      const sourceHeight=renditionHeight(source);
+      const selectedHeight=Number.isInteger(sourceHeight)&&sourceHeight>=144&&sourceHeight<=4320
+        ?sourceHeight
+        :Number.isInteger(hintedHeight)&&hintedHeight>=144&&hintedHeight<=4320
+          ?hintedHeight:null;
       if((source.status===404||source.status===410) &&
          !(source.curlVerified && Date.now()-(source.curlVerifiedAt||0)<120000))
         throw Error('Selected CDN source is stale. Recheck its manifest before download.');
@@ -640,7 +664,7 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse) => {
       const reply=await chrome.runtime.sendNativeMessage('com.uvd.bridge',{
         type:'DOWNLOAD',version:1,url:source.url,kind:source.kind,
         headers:trustedMediaHeaders(source,stored),maxQuality:cap,
-        pageUrl:page?.url||null,title,renditions
+        selectedHeight,pageUrl:page?.url||null,title,renditions
       });
       if(!reply?.ok)throw Error(String(reply?.error||'Native host rejected the task').slice(0,180));
       return reply;

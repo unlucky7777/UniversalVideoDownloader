@@ -1,10 +1,9 @@
 param(
-  [Parameter(Mandatory=$true)]
-  [string]$ExtensionId
+  [string]$ExtensionId='mpncbnfjghomdnfaakmepbbkmdffeage'
 )
 $ErrorActionPreference='Stop'
 if($ExtensionId -cnotmatch '^[a-p]{32}$') {
-  throw 'Chrome extension ID must contain exactly 32 lowercase letters a-p. Copy it from chrome://extensions.'
+  throw 'Chrome extension ID must contain exactly 32 lowercase letters a-p.'
 }
 $setupDir=Split-Path -Parent $MyInvocation.MyCommand.Path
 $root=Split-Path -Parent $setupDir
